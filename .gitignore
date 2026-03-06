@@ -375,3 +375,4 @@ secrets.json
 ehthumbs.db
 Thumbs.db
 /.claude/settings.local.json
+nppBackup/
