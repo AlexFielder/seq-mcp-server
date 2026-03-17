@@ -162,7 +162,7 @@ var host = builder.Build();
 
 // Seq version validation on startup (without logging since we can't write to console)
 var minVer = Version.Parse(builder.Configuration["SeqVersion:Min"] ?? "2024.1");
-var maxVer = Version.Parse(builder.Configuration["SeqVersion:Max"] ?? "2025.2");
+var maxVer = Version.Parse(builder.Configuration["SeqVersion:Max"] ?? "2025.3");
 
 var logger = host.Services.GetService<ILogger<Program>>();
 
