@@ -25,7 +25,10 @@ public static class SeqTools
         {
             var conn = fac.Create(workspace);
             var events = new List<EventEntity>();
-            await foreach (var evt in conn.Events.EnumerateAsync(
+            // PagedEnumerateAsync searches over plain HTTP; EnumerateAsync opens a
+            // websocket to the server-generated ws:// link, which breaks behind
+            // reverse proxies that don't preserve the Host header.
+            await foreach (var evt in conn.Events.PagedEnumerateAsync(
                 filter: filter,
                 count: count,
                 render: true,
@@ -41,7 +44,7 @@ public static class SeqTools
         }
         catch (Exception ex)
         {
-            return new { error = ex.GetType().Name, message = ex.Message, innerMessage = ex.InnerException?.Message };
+            return new { error = ex.GetType().Name, message = ex.Message, detail = ex.ToString() };
         }
     }
 
@@ -79,7 +82,7 @@ public static class SeqTools
         }
         catch (Exception ex)
         {
-            return new { error = ex.GetType().Name, message = ex.Message, innerMessage = ex.InnerException?.Message };
+            return new { error = ex.GetType().Name, message = ex.Message, detail = ex.ToString() };
         }
     }
 
@@ -100,7 +103,7 @@ public static class SeqTools
         }
         catch (Exception ex)
         {
-            return new { error = ex.GetType().Name, message = ex.Message, innerMessage = ex.InnerException?.Message };
+            return new { error = ex.GetType().Name, message = ex.Message, detail = ex.ToString() };
         }
     }
 }
