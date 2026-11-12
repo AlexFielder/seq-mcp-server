@@ -44,7 +44,9 @@ for (var i = 0; i < args.Length; i++)
         Console.WriteLine("  %USERPROFILE%\\.seqmcpserver\\appsettings.json (per-user overrides, optional)");
         Console.WriteLine();
         Console.WriteLine("Environment Variables:");
-        Console.WriteLine("  SEQ_API_KEY         API key for accessing Seq (required)");
+        Console.WriteLine("  SEQ_API_KEY         API key for accessing Seq");
+        Console.WriteLine("  SEQ_API_KEY_FILE    DPAPI key file (Export-Clixml of a SecureString), used when SEQ_API_KEY is unset;");
+        Console.WriteLine("                      or set 'ApiKeyFile' on the profile");
         Console.WriteLine("  SEQ_SERVER_URL      Override the profile's ServerUrl (optional)");
         Console.WriteLine();
         Console.WriteLine("Profiles are defined under the 'SeqProfiles' configuration section, e.g.:");
@@ -78,73 +80,10 @@ if (string.IsNullOrWhiteSpace(profileName))
     throw new InvalidOperationException("Profile name cannot be empty.");
 }
 
-// Load environment variables from .env file if it exists
-// Try multiple strategies to find the .env file
-string? envPath = null;
-
-// Strategy 1: Check current directory
-if (File.Exists(".env"))
-{
-    envPath = Path.GetFullPath(".env");
-}
-// Strategy 2: Walk up from current directory to find .env
-else
-{
-    var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
-    while (currentDir != null && envPath == null)
-    {
-        var possibleEnvPath = Path.Combine(currentDir.FullName, ".env");
-        if (File.Exists(possibleEnvPath))
-        {
-            envPath = possibleEnvPath;
-            break;
-        }
-
-        // Stop if we find a .sln file (we've reached the solution root)
-        if (currentDir.GetFiles("*.sln").Length != 0)
-        {
-            break;
-        }
-
-        currentDir = currentDir.Parent;
-    }
-}
-
-// Strategy 3: Check common locations relative to the executable
-if (envPath == null)
-{
-    var baseDir = AppContext.BaseDirectory;
-    var possiblePaths = new[]
-    {
-        Path.Combine(baseDir, ".env"),
-        Path.Combine(baseDir, "..", "..", "..", ".env"),
-        Path.Combine(baseDir, "..", "..", "..", "..", ".env"),
-        Path.Combine(baseDir, "..", "..", "..", "..", "..", ".env")
-    };
-
-    foreach (var path in possiblePaths)
-    {
-        var fullPath = Path.GetFullPath(path);
-        if (File.Exists(fullPath))
-        {
-            envPath = fullPath;
-            break;
-        }
-    }
-}
-
-// Load the .env file if found
-if (envPath != null && File.Exists(envPath))
-{
-    foreach (var line in File.ReadAllLines(envPath))
-    {
-        if (!string.IsNullOrWhiteSpace(line) && !line.StartsWith('#') && line.Contains('='))
-        {
-            var parts = line.Split('=', 2);
-            Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
-        }
-    }
-}
+// No .env loading: an MCP server starts in whatever folder the client opened, so a .env
+// walked up from there could come from any cloned repository and redirect SEQ_SERVER_URL
+// (sending the API key to another host) or override anything else. Configuration comes only
+// from the MCP client's env block, the per-user appsettings.json and the packaged one.
 
 // Create host builder for the MCP server
 var builder = Host.CreateApplicationBuilder(forwardedArgs.ToArray());
@@ -210,12 +149,22 @@ if (string.IsNullOrWhiteSpace(seqServerUrl))
 builder.Configuration["Seq:ServerUrl"] = seqServerUrl;
 builder.Configuration["Seq:Profile"] = profileName;
 
+// API key: SEQ_API_KEY if set, otherwise a DPAPI-protected key file (Export-Clixml of a
+// SecureString) named by SEQ_API_KEY_FILE or the profile's ApiKeyFile setting.
 var seqApiKey = Environment.GetEnvironmentVariable("SEQ_API_KEY");
-
-// Validate API key is provided
 if (string.IsNullOrEmpty(seqApiKey))
 {
-    throw new InvalidOperationException("SEQ_API_KEY environment variable must be set");
+    var keyFile = Environment.GetEnvironmentVariable("SEQ_API_KEY_FILE");
+    if (string.IsNullOrWhiteSpace(keyFile))
+    {
+        keyFile = profileSection["ApiKeyFile"];
+    }
+    if (string.IsNullOrWhiteSpace(keyFile))
+    {
+        throw new InvalidOperationException(
+            $"No Seq API key: set SEQ_API_KEY, SEQ_API_KEY_FILE, or 'SeqProfiles:{profileName}:ApiKeyFile' in '{userConfigPath}'.");
+    }
+    seqApiKey = ProtectedKeyFile.Read(keyFile);
 }
 
 // Configure Serilog with enhanced context for MCP operations
@@ -231,7 +180,7 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Logging.AddSerilog();
 // Register services
-builder.Services.AddSingleton<ICredentialStore, EnvironmentCredentialStore>();
+builder.Services.AddSingleton<ICredentialStore>(new EnvironmentCredentialStore(seqApiKey));
 builder.Services.AddSingleton<SeqConnectionFactory>();
 
 // Configure MCP server with stdio transport

@@ -4,6 +4,12 @@ public sealed class EnvironmentCredentialStore : ICredentialStore
 {
     private readonly string? _defaultApiKey;
 
+    public EnvironmentCredentialStore(string defaultApiKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(defaultApiKey);
+        _defaultApiKey = defaultApiKey;
+    }
+
     public EnvironmentCredentialStore()
     {
         _defaultApiKey = Environment.GetEnvironmentVariable("SEQ_API_KEY");
@@ -12,8 +18,7 @@ public sealed class EnvironmentCredentialStore : ICredentialStore
         {
             throw new InvalidOperationException(
                 "SEQ_API_KEY environment variable is not set. " +
-                "Please run ./scripts/setup-dev.ps1 (or .sh) to set up your development environment, " +
-                "or set SEQ_API_KEY manually.");
+                "Set SEQ_API_KEY, or point the profile's ApiKeyFile (or SEQ_API_KEY_FILE) at a DPAPI key file.");
         }
     }
 
